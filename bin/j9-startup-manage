@@ -1,0 +1,143 @@
+#!/usr/bin/env python
+"""
+Service startup management tool
+
+Usage:
+	j9-startup-manage --list
+	j9-startup-manage <service> (on|off)
+"""
+
+import sys
+import os
+import pwd
+import re
+
+from docopt import docopt
+
+__version__ = "0.1"
+
+class Jet9Error(Exception):
+	pass
+
+def check_uid(min=1000, max=6530):
+	"""Check uid for user's uid interval and return uid. Don't use other getuid functions!!!"""
+
+	uid = os.geteuid()
+	if (uid < min) or (uid > max):
+		raise Jet9Error("UID %s forbidden" % (uid, ))
+	return uid
+
+def set_startup_service(uid, service, state):
+	"""Set service startup state"""
+
+	home = get_home_by_uid(uid)
+	rc_dir = "%s/etc/rc.d" % (home, )
+	serv_file = "%s/etc/init.d/%s" % (home, service)
+
+	if not os.path.exists(serv_file):
+		raise Jet9Error("Can't open startup file for service %s, uid %s: %s" % (service, uid, e))
+	
+	order = get_startup_service_order(uid, service)
+	if order is None:
+		raise Jet9Error("Can't set startup links")
+
+	s_link = "%s/S%s%s" % (rc_dir, order[0], service, )
+	k_link = "%s/K%s%s" % (rc_dir, order[1], service, )
+
+	if state == 0:
+		try:
+			os.unlink(s_link)
+			os.unlink(k_link)
+		except OSError:
+			pass
+			
+	else:
+		try:
+			os.symlink(serv_file, s_link)
+			os.symlink(serv_file, k_link)
+		except OSError:
+			pass
+
+def get_startup_service_order(uid, service):
+	"""Get service startup order values"""
+
+	home = get_home_by_uid(uid)
+	try:
+		fn = open("%s/etc/init.d/%s" % (home, service), "r")
+	except IOError as e:
+		raise Jet9Error("Can't open startup file for service %s, uid %s: %s" % (service, uid, e))
+	
+	pattern = re.compile(r'.*?chkconfig:\s+[\-0-9]+\s+[\-0-9]+\s+[\-0-9]+.*')
+
+	buf = ''
+	while buf is not None:
+		buf = fn.readline().strip()
+		if pattern.match(buf) is not None:
+			fn.close()
+			items = buf.split(" ")
+			p = ""
+			while p != "chkconfig:":
+				p = items.pop(0)
+			return (items[1], items[2])
+	return None
+
+def get_home_by_uid(uid):
+	"""Get user's home directory by uid"""
+
+	try:
+		home = pwd.getpwuid(uid)[5]
+	except Exception as e:
+		raise Jet9Error("Can't get pwd entry for uid %s: %s" % (uid, e))
+	return home
+
+def list_services(uid):
+	"""Get services list with on|off startup flags"""
+
+	home = get_home_by_uid(uid)
+	init_dir = "%s/etc/init.d" % (home, )
+	rc_dir = "%s/etc/rc.d" % (home, )
+	res = {}
+
+	for service in os.listdir(init_dir):
+		if service.startswith("."):
+			continue
+
+		r = get_startup_service_order(uid, service)
+		if r is None:
+			print "WARNING: cant get startup order values for service %s, uid %s" % (service, uid, )
+			continue
+
+		if os.path.exists("%s/etc/rc.d/S%s%s" % (home, r[0], service, )):
+			res[service] = 1
+		else:
+			res[service] = 0
+	
+	return res
+
+if __name__ == "__main__":
+	args = docopt(__doc__, version=__version__)
+
+	uid = check_uid()
+
+	if args["--list"] == True:
+		try:
+			for (k, v) in list_services(uid).items():
+				print k, ("off", "on")[v]
+		except Jet9Error as e:
+			print e
+			sys.exit(1)
+
+	elif args["<service>"] is not None:
+		service = args["<service>"]
+		if args["on"] == True:
+			try:
+				set_startup_service(uid, service, 1)
+			except Jet9Error as e:
+				print e
+				sys.exit(1)
+		else:
+			try:
+				set_startup_service(uid, service, 0)
+			except Jet9Error as e:
+				print e
+				sys.exit(1)
