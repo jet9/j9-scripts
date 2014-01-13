@@ -7,5 +7,5 @@ Requirements:
 
 python docopt module. To install with pip:
 
-  pip install docopt
+`pip install docopt`
 
