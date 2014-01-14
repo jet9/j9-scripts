@@ -1,0 +1,191 @@
+#!/usr/bin/env python
+"""
+Service startup initialization script
+
+Usage:
+	j9-init (start|stop)
+	j9-init status [<user>]
+"""
+
+import sys
+import os
+import pwd
+import re
+
+from docopt import docopt
+
+__version__ = "0.1"
+
+class Jet9ServiceError(Exception):
+	pass
+
+def validate_input(inp, pattern):
+	p = re.compile(pattern)
+
+	if p.match(inp) is None:
+		return False
+	
+	return True
+
+def service_list(user, type="avail"):
+	"""Get list of available services for user.
+	@type: (avail|start|stop)
+	"""
+
+	if not user.startswith("u"):
+		raise Jet9ServiceError("Invalid username: %s" % (user, ))
+	
+	(uid, gid, home) = get_user_creds(user)
+
+	'''
+	pwuser = pwd.getpwnam(user)
+
+	if pwuser is None:
+		raise Jet9ServiceError("Can't get pwd record for user %s" % (user, ))
+
+	uid = pwuser.pw_uid
+	gid = pwuser.pw_gid
+	home = pwuser.pw_dir
+	'''
+
+	if type == "avail":
+		init_dir = "%s/etc/init.d" % (home, )
+		if os.path.exists(init_dir) == False:
+			return ()
+		
+		return filter(lambda x: x[0].isalpha(), os.listdir(init_dir))
+
+	elif (type == "start") or (type == "stop"):
+		rc_dir = "%s/etc/rc.d" % (home, )
+		if os.path.exists(rc_dir) == False:
+			return ()
+		
+		rc_links = os.listdir(rc_dir)
+		if type == "start":
+			rc_links = filter(lambda x: x.startswith("S"), rc_links)
+		else:
+			rc_links = filter(lambda x: x.startswith("K"), rc_links)
+
+		return sorted(rc_links)
+	else:
+		raise Exception("Wrong service type %s. Possible (avail|start|stop)" % (type, ))
+
+def service_manage(user, service, action, wait=True):
+	"""Service management routine"""
+
+	if validate_input(action, "^[a-zA-Z0-9_-]+$") == False:
+		raise Jet9ServiceError("Invalid action: %s" % (action, ))
+
+	if not user.startswith("u"):
+		raise Jet9ServiceError("Invalid username: %s" % (user, ))
+	
+	(uid, gid, home) = get_user_creds(user)
+
+	'''
+	pwuser = pwd.getpwnam(user)
+
+	if pwuser is None:
+		raise Jet9ServiceError("Can't get pwd record for user %s" % (user, ))
+
+	uid = pwuser.pw_uid
+	gid = pwuser.pw_gid
+	home = pwuser.pw_dir
+	'''
+
+	if os.path.exists("%s/etc/init.d/%s" % (home, service, )) == False:
+		raise Jet9ServiceError("There is no startup script in init.d directory for service %s" % (service, ))
+
+	pid = os.fork()
+	if pid == 0:
+		os.setregid(gid, gid)
+		os.setreuid(uid, uid)
+		# XXX: FIXME: root group still present after dropping priveleges
+		os.putenv("HOME", home)
+		
+		rc = os.system("%s/etc/init.d/%s %s" % (home, service, action ))
+		#print "rc:", rc >> 8
+		os._exit(rc>>8)
+	else:
+		if wait == True:
+			return os.wait()[1]>>8
+		else:
+			return 0
+
+def get_user_creds(user, just_warn=False):
+	"""Get user pwd credentials: (uid, gid, home)"""
+
+	pwuser = pwd.getpwnam(user)
+
+	if pwuser is None:
+		if just_warn == True:
+			print "Can't get pwd record for user %s" % (user, )
+			return (None, None, None)
+		else:
+			raise Exception("Can't get pwd record for user %s" % (user, ))
+
+	return (pwuser.pw_uid, pwuser.pw_gid, pwuser.pw_dir)
+
+
+if __name__ == "__main__":
+	args = docopt(__doc__, version=__version__)
+
+
+	if args["status"] == True:
+		if args["<user>"] is not None:
+			users = [args["<user>"]]
+		else:
+			users = os.listdir("/users")
+	
+		pids = []
+		for user in users:
+			if not user.startswith("u"):
+				continue
+
+			pid = os.fork()
+			if pid == 0:
+				(uid, gid, home) = get_user_creds(user)
+
+				rc_list = service_list(user, type="avail")
+				for service in rc_list:
+					ec = service_manage(user, service, "status")
+					print service, ec
+				os._exit(0)
+			else:
+				pids.append(pid)
+
+		for pid in pids:
+			os.waitpid(pid, 0)
+
+	elif args["start"] or args["stop"]:
+		action = None
+		if args["start"] == True:
+			action = "start"
+		else:
+			action = "stop"
+
+		pids = []
+		users = os.listdir("/users")
+		for user in users:
+			if not user.startswith("u"):
+				continue
+
+			(uid, gid, home) = get_user_creds(user, just_warn=True)
+
+			if uid == None:
+				continue
+		
+			pid = os.fork()
+			if pid == 0:
+			
+				rc_list = service_list(user, type=action)
+				for service in rc_list:
+					service = service[3:]
+					ec = service_manage(user, service, action)
+					print service, ec
+				os._exit(0)
+			else:
+				pids.append(pid)
+
+		for pid in pids:
+			os.waitpid(pid, 0)
+
