@@ -1,0 +1,24 @@
+; $domain
+;
+#set _frontend = $frontend[0]
+${domain}.	86400	IN	SOA	${_frontend}.jet9.29ah.ru. dk.dimcha.ru. (
+
+					1	; Serial
+					10800	; Refresh
+					1800	; Retry
+					604800	; Expire
+					0 )	; Minimum TTL
+
+#for _frontend in $ip.keys():
+@	0	IN	A	$ip[$_frontend]
+#end for
+*	0	CNAME @
+#for _frontend in $frontend:
+${domain}.	300	IN	NS	${_frontend}.jet9.29ah.ru.
+#end for
+${domain}.	300	IN	MX	3 alt1.aspmx.l.google.com.
+${domain}.	300	IN	MX	5 alt2.aspmx.l.google.com.
+${domain}.	300	IN	MX	1 aspmx.l.google.com.
+${domain}.	300	IN	MX	10 aspmx2.googlemail.com.
+${domain}.	300	IN	MX	10 aspmx3.googlemail.com.
+mail.${domain}.	300	IN	CNAME	ghs.google.com.

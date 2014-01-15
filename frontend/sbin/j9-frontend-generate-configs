@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+"""
+Squid and Bind config generation script
+
+Usage:
+  j9-frontend-generate-configs [options]
+
+Options:
+  -f FILE    Path to configuration file. [default: /etc/jet9/location.yaml]
+  -s FILE    Squid config file template. [default: /etc/jet9/squid.template]
+  -p FILE    Squid result config file. [default: /etc/squid/peers.conf]
+  -z FILE    Bind zone config file template. [default: /etc/jet9/zone.template]
+  -d FILE    Bind zone config files directory. [default: /var/named/zones]
+  -b FILE    Bind config file template. [default: /etc/jet9/bind.template]
+  -c FILE    Bind result config file. [default: /var/named/zones.conf]
+  -q         Be quiet
+"""
+
+import sys
+import os
+import pwd
+import re
+
+from Cheetah.Template import Template
+from jet9.tools import read_conf, p, save_file
+from jet9.ndict import ndict
+from docopt import docopt
+
+__version__ = "0.1"
+
+ip = {
+	"fe01": "185.12.28.116",
+	"fe02": "185.12.28.131",
+}
+
+def service_reload(service):
+	return os.system("/etc/init.d/%s reload" % (service, ))
+
+def generate_squid_config(conf, args):
+	p.info("Generating config file for Squid proxy")
+	t = Template(file=args["-s"], searchList=[{"users": conf}])
+	save_file(args["-p"], str(t))
+
+	p.info("Reload Squid Proxy service")
+	ec = service_reload("squid")
+	if ec == 0:
+		p.info("OK")
+	else:
+		p.warn("FAIL")
+
+def generate_bind_config(conf, args):
+	p.info("Generating config file for Bind")
+
+	for user in conf.keys():
+		for domain in conf[user].keys():
+			generate_bind_zone(domain, conf[user][domain], args)
+
+	t = Template(file=args["-b"], searchList=[{"users": conf}])
+	save_file(args["-c"], str(t))
+
+	p.info("Reload Bind service")
+	ec = service_reload("named")
+	if ec == 0:
+		p.info("OK")
+	else:
+		p.warn("FAIL")
+
+def generate_bind_zone(domain, domain_data, args):
+	domain_data["ip"] = ip
+	domain_data["domain"] = domain
+	p.info("Generating zone %s" % (domain, ))
+
+	t = Template(file=args["-z"], searchList=[domain_data])
+	return save_file("%s/%s" % (args["-d"], domain), str(t))
+
+if __name__ == "__main__":
+	args = docopt(__doc__, version=__version__)
+
+	conf = read_conf(args["-f"])
+	if conf is None:
+		p.fail("Can't open config file %s" % (args["-f"], ))
+	
+	conf = ndict(conf)
+
+	if args["-q"] == True:
+		p.LOGLEVEL = p.QUIET
+
+	generate_squid_config(conf, args)
+	generate_bind_config(conf, args)
+

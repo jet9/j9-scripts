@@ -1,0 +1,11 @@
+#for _user in $sorted($users.keys()):
+	#set _uid = $_user[1:]
+	#for _domain in $users[$_user].keys():
+	#set _dom = $users[$_user][$_domain]
+cache_peer ${_dom.backend}.jet9.29ah.ru parent ${_uid}${$_dom.http_port} 0 no-query originserver name=${_user} login=PASS
+acl acl_${_user} dstdomain ${_domain}
+cache_peer_access ${_user} allow acl_${_user}
+http_access allow acl_${_user}
+
+	#end for
+#end for

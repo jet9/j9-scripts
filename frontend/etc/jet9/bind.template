@@ -1,0 +1,9 @@
+#for _user in $users.keys():
+	#for _domain in $users[$_user].keys():
+zone "${_domain}" IN {
+	type master;
+	file "zones/${_domain}";
+};
+
+	#end for
+#end for
