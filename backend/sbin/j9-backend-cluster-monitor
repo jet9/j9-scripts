@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+"""
+Jet9 Backend Cluster monitoring program
+"""
+
+import sys
+import os
+import logging
+
+from jet9.monitoring import ClusterMonitorEvent, ClusterMonitor
+from jet9.logger import setup_log
+
+LOG = logging.getLogger("jet9." + __name__)
+
+if __name__ == "__main__":
+
+	"""
+	Environment Variable	Description
+	 CRM_notify_recipient	The static external-recipient from the resource definition.
+	 CRM_notify_node		The node on which the status change happened.
+	 CRM_notify_rsc			The name of the resource that changed the status.
+	 CRM_notify_task		The operation that caused the status change.
+	 CRM_notify_desc		The textual output relevant error code of the operation (if any) that caused the status change.
+	 CRM_notify_rc			The return code of the operation.
+	 CRM_notify_target_rc	The expected return code of the operation.
+	 CRM_notify_status		The numerical representation of the status of the operation.
+	"""
+	#os.environ["CRM_notify_node"] = "be01"
+	#os.environ["CRM_notify_task"] = "start"
+	#os.environ["CRM_notify_rsc"] = "p_j9init"
+	#os.environ["CRM_notify_desc"] = "OK"
+	
+	setup_log(log_level=logging.INFO)
+
+	event = ClusterMonitorEvent("j9init")
+	event.set_param("CRM_notify_task", "start")
+	event.set_param("CRM_notify_rsc", "p_j9init")
+	event.set_param("CRM_notify_desc", "OK")
+	event.set_callback(lambda x: LOG.info("Run callback: %s" % (x, )))
+
+	monitor = ClusterMonitor()
+	monitor.add_event(event)
+
+	if monitor.execute() is None:
+		LOG.critical("No CRM_* env vars found!")

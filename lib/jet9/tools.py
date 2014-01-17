@@ -38,6 +38,33 @@ class P(object):
 
 p = P()
 
+class LockFile(object):
+	"""Simple lockfile class"""
+
+	def __init__(self, filename):
+		self.filename = filename
+	
+	def create(self):
+		"""Create lock file
+		@return: True: OK, False: lockfile exist"""
+
+		if self.check() == True:
+			return False
+		
+		fd = open(self.filename, "w")
+		fd.close()
+		return True
+			
+	def check(self):
+		"""Check whether lockfile exists"""
+
+		return os.path.exists(self.filename)
+
+	def remove(self):
+		"""Remove lockfile"""
+
+		return os.unlink(self.filename)
+
 def read_conf(fname, _fail=True):
     try:
         f = open(fname)
